@@ -11,6 +11,7 @@ class MovieVC: UIViewController {
     // MARK: - Properties
     
     let movieViewModel: MovieViewModelProtocol
+    private let refreshControl = UIRefreshControl()
     
     // MARK: - Using DI ( Dependency Injection ) to avoid Memory Leak
     
@@ -44,6 +45,13 @@ class MovieVC: UIViewController {
         return searchBar
     }()
     
+    private let activityIndicator: UIActivityIndicatorView = {
+        let indicator = UIActivityIndicatorView(style: .large)
+        indicator.translatesAutoresizingMaskIntoConstraints = false
+        indicator.accessibilityLabel = "Loading..."
+        return indicator
+    }()
+    
     // MARK: - View Life cycle method
     
     override func viewDidLoad() {
@@ -54,7 +62,8 @@ class MovieVC: UIViewController {
         movieTableView.delegate = self
         searchBox.delegate = self
         setUpUI()
-        fetchMovies()
+        setUpRefreshControl()
+        getMoviesAndLoadTableView()
     }
     
     // MARK: - Setting up the UI
@@ -62,6 +71,7 @@ class MovieVC: UIViewController {
     func setUpUI() {
         view.addSubview(searchBox)
         view.addSubview(movieTableView)
+        view.addSubview(activityIndicator)
         setUpConstraints()
     }
     
@@ -77,18 +87,11 @@ class MovieVC: UIViewController {
             movieTableView.topAnchor.constraint(equalTo: searchBox.bottomAnchor, constant: 10),
             movieTableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             movieTableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            movieTableView.trailingAnchor.constraint(equalTo: view.trailingAnchor)
+            movieTableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            
+            activityIndicator.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            activityIndicator.centerYAnchor.constraint(equalTo: view.centerYAnchor),
         ])
-    }
-    
-    // MARK: - Fetching Movies with view model and reloading table view
-    
-    func fetchMovies() {
-        movieViewModel.fetchMovies(completed: {
-            DispatchQueue.main.async { [weak self = self] in
-                self?.movieTableView.reloadData()
-            }
-        })
     }
 }
 
@@ -126,5 +129,63 @@ extension MovieVC: UISearchBarDelegate {
                 self?.movieTableView.reloadData()
             }
         }
+    }
+}
+
+extension MovieVC {
+    // MARK: - Fetching Movies with view model and reloading table view ( Using Dispatch Queue )
+    
+    //    func fetchMovies() {
+    //        movieViewModel.fetchMovies {
+    //            DispatchQueue.main.async { [weak self = self] in
+    //                self?.movieTableView.reloadData()
+    //            }
+    //        }
+    //    }
+    
+    // MARK: - Fetching Movies with view model and reloading table view( Using Async Await )
+    
+    @objc func getMoviesAndLoadTableView() {
+        activityIndicator.startAnimating()
+        movieTableView.isHidden = true
+        
+        Task { [weak self] in
+            await self?.movieViewModel.fetchMovies()
+            
+            await MainActor.run {
+                guard let self = self else { return }
+                
+                self.movieTableView.reloadData()
+                self.refreshControl.endRefreshing()
+                self.activityIndicator.stopAnimating()
+                self.movieTableView.isHidden = false
+                
+                if let errorMessage = self.movieViewModel.errorMessage {
+                    self.showErrorAlert(message: errorMessage)
+                }
+            }
+        }
+    }
+    
+    func setUpRefreshControl() {
+        refreshControl.addTarget(self, action: #selector(getMoviesAndLoadTableView), for: .valueChanged)
+        movieTableView.refreshControl = refreshControl
+    }
+    
+    func showErrorAlert(message: String) {
+        let alert = UIAlertController(
+            title: "Error",
+            message: message,
+            preferredStyle: .alert
+        )
+        
+        alert.addAction(UIAlertAction(title: "OK", style: .default, handler: nil))
+        
+        // Optional: Add a Retry action
+        alert.addAction(UIAlertAction(title: "Retry", style: .default) { [weak self] _ in
+            self?.getMoviesAndLoadTableView()
+        })
+        
+        present(alert, animated: true, completion: nil)
     }
 }

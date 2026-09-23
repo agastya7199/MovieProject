@@ -10,11 +10,11 @@ import UIKit
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     var window: UIWindow?
-    var isInternetAvailable: Bool = false
+    var isInternetAvailable: Bool = true
 
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
-        var viewModel: MovieViewModelProtocol
         let objNetworkManager: NetworkManagerProtocol = NetworkManager.shared
+        var viewModel: MovieViewModelProtocol
         if isInternetAvailable {
             viewModel = MovieViewModel(objNetworkManager: objNetworkManager)
         } else {
